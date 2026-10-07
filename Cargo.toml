@@ -21,8 +21,7 @@ cratefield-testing = "0.5.1"
 # The meaning lock and the word diff are generic, so they live in the harness
 # (Cratefield/harness#836, PR #837). Not released yet: a git dependency pinned
 # to the PR's head commit. Neither crate depends on cratefield-core, so no
-# `[patch]` is needed. Repin to crates.io once released (Ghostwritin/ghostwritin
-# issue "Repin cratefield-text-guard and cratefield-text-diff to crates.io").
+# `[patch]` is needed. Repin to crates.io once released (#9).
 cratefield-text-guard = { git = "https://github.com/Cratefield/harness", rev = "ae5849e7d9b6a95202bbd277295cfc6933b482fb" }
 cratefield-text-diff = { git = "https://github.com/Cratefield/harness", rev = "ae5849e7d9b6a95202bbd277295cfc6933b482fb" }
 # Versions follow the harness workspace so one lockfile resolves both.

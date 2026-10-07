@@ -19,7 +19,7 @@ Everything in this repository is MIT. The hosted service at ghostwrit.in will ad
 | `ApiKeys` | `NoApiKeys`; `StaticApiKeys` (SHA-256 digests from config) | accounts, passkeys and API keys |
 | `RequestLogger` | `TracingLogger`; a console logger in the Worker | the hosted log pipeline and usage metering |
 
-The hosted Worker composes the same `RewriteApi` and `HealthApi` modules with its own `Services` value. The engine, the meaning lock, the diff, the prompts, the CLI and the MCP server are the same code in both.
+The hosted Worker composes the same `RewriteApi` and `HealthApi` modules with its own `Services` value (#10 has the plan for the private crates). The engine, the meaning lock, the diff, the prompts, the CLI and the MCP server are the same code in both.
 
 ## Crates
 
@@ -33,7 +33,7 @@ The hosted Worker composes the same `RewriteApi` and `HealthApi` modules with it
 | `ghostwritin-cli` | The `ghostwritin` binary: rewrite a file locally with your own model key, keeping code fences and Markdown structure; build a style summary. Also the native HTTP client and model wiring the MCP server shares. |
 | `ghostwritin-mcp` | The `ghostwritin-mcp` binary: a stdio MCP server with one `rewrite` tool on the same engine. |
 
-The meaning lock and the word diff are generic, so they live in the harness, not here: `cratefield-text-guard` (find names, numbers, quotes and code; check a rewrite kept them) and `cratefield-text-diff` (word diff with protected ranges kept whole), proposed in [Cratefield/harness#837](https://github.com/Cratefield/harness/pull/837). Until that is merged and released, this workspace pins them to the PR's head commit as a git dependency (see `Cargo.toml`).
+The meaning lock and the word diff are generic, so they live in the harness, not here: `cratefield-text-guard` (find names, numbers, quotes and code; check a rewrite kept them) and `cratefield-text-diff` (word diff with protected ranges kept whole), proposed in [Cratefield/harness#837](https://github.com/Cratefield/harness/pull/837). Until that is merged and released, this workspace pins them to the PR's head commit as a git dependency (see `Cargo.toml`; #9 tracks the repin).
 
 ## What works today, and what is planned
 
