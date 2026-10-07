@@ -22,8 +22,8 @@ cratefield-testing = "0.5.1"
 # (Cratefield/harness#836, PR #837). Not released yet: a git dependency pinned
 # to the PR's head commit. Neither crate depends on cratefield-core, so no
 # `[patch]` is needed. Repin to crates.io once released (#9).
-cratefield-text-guard = { git = "https://github.com/Cratefield/harness", rev = "ae5849e7d9b6a95202bbd277295cfc6933b482fb" }
-cratefield-text-diff = { git = "https://github.com/Cratefield/harness", rev = "ae5849e7d9b6a95202bbd277295cfc6933b482fb" }
+cratefield-text-guard = { git = "https://github.com/Cratefield/harness", rev = "c12f3954d7febde9e3786db2651a825f2750eb14" }
+cratefield-text-diff = { git = "https://github.com/Cratefield/harness", rev = "c12f3954d7febde9e3786db2651a825f2750eb14" }
 # Versions follow the harness workspace so one lockfile resolves both.
 async-trait = "0.1.92"
 axum = { version = "0.8.9", default-features = false, features = ["json"] }

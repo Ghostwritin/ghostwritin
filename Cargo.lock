@@ -429,7 +429,7 @@ dependencies = [
 [[package]]
 name = "cratefield-text-diff"
 version = "0.1.0"
-source = "git+https://github.com/Cratefield/harness?rev=ae5849e7d9b6a95202bbd277295cfc6933b482fb#ae5849e7d9b6a95202bbd277295cfc6933b482fb"
+source = "git+https://github.com/Cratefield/harness?rev=c12f3954d7febde9e3786db2651a825f2750eb14#c12f3954d7febde9e3786db2651a825f2750eb14"
 dependencies = [
  "serde",
 ]
@@ -437,7 +437,7 @@ dependencies = [
 [[package]]
 name = "cratefield-text-guard"
 version = "0.1.0"
-source = "git+https://github.com/Cratefield/harness?rev=ae5849e7d9b6a95202bbd277295cfc6933b482fb#ae5849e7d9b6a95202bbd277295cfc6933b482fb"
+source = "git+https://github.com/Cratefield/harness?rev=c12f3954d7febde9e3786db2651a825f2750eb14#c12f3954d7febde9e3786db2651a825f2750eb14"
 dependencies = [
  "serde",
 ]
