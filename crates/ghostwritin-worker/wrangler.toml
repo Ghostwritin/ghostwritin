@@ -1,0 +1,30 @@
+# The open-source Ghostwritin Worker. NOT DEPLOYED: nothing serves
+# api.ghostwrit.in yet (see the "Deploy the Worker" issue). Self-hosters can
+# deploy it to their own account with `npx wrangler deploy`.
+name = "ghostwritin-api"
+main = "build/worker/shim.mjs"
+compatibility_date = "2026-09-01"
+# Pick the workers.dev subdomain before the first deploy: a non-interactive
+# deploy registers one on its own otherwise.
+workers_dev = true
+
+[build]
+command = "worker-build --release"
+
+# No [observability] block on purpose: Workers Logs would also capture the
+# runtime's own request logs. The Worker logs one metadata-only line per
+# rewrite (log_outcome in ghostwritin-api); request bodies are never logged.
+
+[vars]
+ENV = "staging"
+# Optional: the model the tier maps to (defaults are the adapters' own).
+# ANTHROPIC_MODEL = ""
+# OPENAI_MODEL = ""
+# OPENAI_BASE_URL = ""
+
+# Secrets, never in this file (`wrangler secret put <NAME>`):
+#   GHOSTWRITIN_API_KEYS   account=sha256hex pairs, comma-separated; without
+#                          it every rewrite is refused (401)
+#   ANTHROPIC_API_KEY      or OPENAI_API_KEY: the model provider; without one
+#                          /v1/rewrite answers 503 model-not-configured
+#   HARNESS_SECRET         harness log pseudonyms (32+ bytes)

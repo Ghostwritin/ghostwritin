@@ -1,0 +1,26 @@
+[package]
+name = "ghostwritin-core"
+description = "Ghostwritin's domain: voices, strengths, the rewrite request and response, validation, errors, and the open-core ports (human score, watermarks, quota, voices, API keys)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+cratefield-text-guard = { workspace = true }
+cratefield-text-diff = { workspace = true }
+async-trait = { workspace = true }
+schemars = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+subtle = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+pollster = { workspace = true }

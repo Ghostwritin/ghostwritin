@@ -1,0 +1,28 @@
+[package]
+name = "ghostwritin-api"
+description = "Ghostwritin's HTTP API as Cratefield modules: POST /v1/rewrite and GET /v1/health, metadata-only logging, every hosted feature behind an open-core port."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+ghostwritin-core = { path = "../ghostwritin-core" }
+ghostwritin-rewrite = { path = "../ghostwritin-rewrite" }
+cratefield-core = { workspace = true }
+axum = { workspace = true }
+bytes = { workspace = true }
+http = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+cratefield-testing = { workspace = true }
+async-trait = { workspace = true }
+pollster = { workspace = true }
+tower = { workspace = true }

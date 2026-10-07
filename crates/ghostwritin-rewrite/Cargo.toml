@@ -1,0 +1,24 @@
+[package]
+name = "ghostwritin-rewrite"
+description = "The Ghostwritin engine: Markdown-aware prompts for a voice and a strength, a TextModel call per chunk, the meaning lock with one retry, and the diff and scores in the response."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+ghostwritin-core = { path = "../ghostwritin-core" }
+cratefield-core = { workspace = true }
+cratefield-text-guard = { workspace = true }
+schemars = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+async-trait = { workspace = true }
+pollster = { workspace = true }

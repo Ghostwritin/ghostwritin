@@ -1,0 +1,58 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+license = "MIT"
+repository = "https://github.com/Ghostwritin/ghostwritin"
+# Open source, but not on crates.io yet: the crate names are not claimed.
+publish = false
+
+[workspace.dependencies]
+# The Cratefield harness, from crates.io, as the other Factory Zero ventures use it.
+cratefield-core = "0.8.4"
+cratefield-runtime-cloudflare = "0.4.2"
+cratefield-adapter-anthropic = "0.3.1"
+cratefield-adapter-openai-compatible = "0.2.1"
+cratefield-testing = "0.5.1"
+# The meaning lock and the word diff are generic, so they live in the harness
+# (Cratefield/harness#836, PR #837). Not released yet: a git dependency pinned
+# to the PR's head commit. Neither crate depends on cratefield-core, so no
+# `[patch]` is needed. Repin to crates.io once released (Ghostwritin/ghostwritin
+# issue "Repin cratefield-text-guard and cratefield-text-diff to crates.io").
+cratefield-text-guard = { git = "https://github.com/Cratefield/harness", rev = "ae5849e7d9b6a95202bbd277295cfc6933b482fb" }
+cratefield-text-diff = { git = "https://github.com/Cratefield/harness", rev = "ae5849e7d9b6a95202bbd277295cfc6933b482fb" }
+# Versions follow the harness workspace so one lockfile resolves both.
+async-trait = "0.1.92"
+axum = { version = "0.8.9", default-features = false, features = ["json"] }
+bytes = "1.12.1"
+getrandom = { version = "0.4.3", default-features = false, features = ["wasm_js"] }
+http = "1.5.0"
+pollster = { version = "0.4", features = ["macro"] }
+schemars = { version = "1.2.2", features = ["preserve_order"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+subtle = "2.6.1"
+sha2 = "0.11.0"
+thiserror = "2.0.20"
+tower = { version = "0.5.3", features = ["util"] }
+tracing = "0.1.44"
+worker = { version = "0.8.5", default-features = false }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+unreachable_pub = "warn"
+unnameable_types = "warn"
+trivial_numeric_casts = "warn"
+
+[workspace.lints.clippy]
+all = "warn"
+pedantic = "warn"
+must_use_candidate = { level = "allow", priority = 1 }
+
+[profile.release]
+opt-level = "s"
+lto = true

@@ -1,0 +1,36 @@
+[package]
+name = "ghostwritin-cli"
+description = "The `ghostwritin` command: rewrite Markdown or text files in a voice, locally, with your own model key. Code fences and structure are kept."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lib]
+name = "ghostwritin_cli"
+path = "src/lib.rs"
+
+[[bin]]
+name = "ghostwritin"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+ghostwritin-core = { path = "../ghostwritin-core" }
+ghostwritin-rewrite = { path = "../ghostwritin-rewrite" }
+ghostwritin-voice = { path = "../ghostwritin-voice" }
+cratefield-core = { workspace = true }
+cratefield-adapter-anthropic = { workspace = true }
+cratefield-adapter-openai-compatible = { workspace = true }
+async-trait = { workspace = true }
+bytes = { workspace = true }
+clap = { version = "4.6.0", features = ["derive", "env"] }
+http = { workspace = true }
+pollster = { workspace = true }
+serde_json = { workspace = true }
+# rustls: no OpenSSL.
+ureq = { version = "3.4.2", default-features = false, features = ["rustls"] }
