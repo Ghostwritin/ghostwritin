@@ -1,7 +1,8 @@
 //! Ghostwritin's domain, with no I/O: the voices and strengths, the rewrite
 //! request and its limits, the response (rewrite, scores, diff, locks), the
-//! errors, and the **open-core ports** ([`ports`]) through which the hosted
-//! service plugs in what is not in this repository.
+//! errors, the **open-core ports** ([`ports`]) through which the hosted
+//! service plugs in what is not in this repository, and the issued API keys
+//! ([`accounts`]) that authenticate against one of those ports.
 //!
 //! # Data policy, as types
 //!
@@ -21,6 +22,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod accounts;
 mod error;
 pub mod ports;
 mod types;

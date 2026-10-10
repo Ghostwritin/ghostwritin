@@ -5,3 +5,4 @@
 .dev.vars
 .wrangler/
 node_modules/
+.cargo-home/
