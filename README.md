@@ -69,6 +69,8 @@ Content-Type: application/json
 }
 ```
 
+With a `HumanScore` wired in, a score is `{"ai_likely": 0.0–1.0, "detector": "…", "flags": [{"start", "end", "reason"}]}`. `flags` are byte offsets on char boundaries into the text that was scored (`score_before` indexes the request's text, `score_after` the rewrite), with a reason, `stock_phrase` or `uniform_rhythm`; they may overlap or nest, and they carry no words. A score without `flags` still parses.
+
 Errors are `application/problem+json` with a stable `code`: `invalid-request`, `empty-text`, `too-many-words` (over 10,000), `unauthorized`, `voice-unavailable`, `quota-exceeded`, `meaning-changed` (with `locks`: the facts the model would not keep), `model-not-configured`, `model-unavailable`, `model-rejected`, `model-output`. The Worker adds one of its own, `rate-limited` (429, with `Retry-After`), when the account's rate-limit binding refuses the key.
 
 ### The meaning lock
