@@ -75,16 +75,55 @@ impl WatermarkDetector for NoWatermarkDetector {
     }
 }
 
+/// The seconds in a UTC day, the window [`DailyWordLimit`] counts in.
+const SECS_PER_DAY: u64 = 86_400;
+
+/// Words held for one rewrite: what [`Quota::reserve`] charged and where,
+/// so [`Quota::refund`] can put them back into the same window after a
+/// failed rewrite.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Reservation {
+    pub account: AccountId,
+    pub words: usize,
+    /// The window the words went to, as the implementation keys it
+    /// (a day number, a month index, whatever the quota counts in).
+    pub period: u64,
+    /// Unix seconds when that window rolls over.
+    pub resets_at: u64,
+}
+
 /// Word quotas: reserve the words a rewrite will use before the model is
-/// called.
+/// called, refund them if it fails, settle them once it succeeded.
 #[async_trait]
 pub trait Quota: Send + Sync {
     /// # Errors
     ///
-    /// [`GhostwritinError::QuotaExceeded`] when `words` more would go over
-    /// the account's allowance; [`GhostwritinError::Storage`] when the
-    /// count cannot be read.
-    async fn reserve(&self, account: &AccountId, words: usize) -> Result<(), GhostwritinError>;
+    /// [`GhostwritinError::QuotaExceeded`] (carrying the period's reset
+    /// time) when `words` more would go over the account's allowance;
+    /// [`GhostwritinError::Storage`] when the count cannot be read or
+    /// written.
+    async fn reserve(
+        &self,
+        account: &AccountId,
+        words: usize,
+    ) -> Result<Reservation, GhostwritinError>;
+
+    /// Puts a failed rewrite's words back. A refund after the period
+    /// rolled over, or a refund applied twice, must not over-credit:
+    /// implementations count the same window the reservation named and
+    /// never below zero.
+    ///
+    /// # Errors
+    ///
+    /// [`GhostwritinError::Storage`] when the count cannot be written.
+    async fn refund(&self, reservation: &Reservation) -> Result<(), GhostwritinError>;
+
+    /// The rewrite the words were reserved for succeeded: they are spent.
+    /// A hook for quotas that bill what was used (a metered plan reports
+    /// the count here); the open ones have nothing to do. Infallible on
+    /// purpose: settling must never fail a rewrite that already succeeded,
+    /// so an implementation logs its own failures (counts only, no text).
+    async fn settle(&self, _reservation: &Reservation) {}
 }
 
 /// No quota: every reservation succeeds. The CLI's and the MCP server's,
@@ -94,7 +133,20 @@ pub struct Unlimited;
 
 #[async_trait]
 impl Quota for Unlimited {
-    async fn reserve(&self, _account: &AccountId, _words: usize) -> Result<(), GhostwritinError> {
+    async fn reserve(
+        &self,
+        account: &AccountId,
+        words: usize,
+    ) -> Result<Reservation, GhostwritinError> {
+        Ok(Reservation {
+            account: account.clone(),
+            words,
+            period: 0,
+            resets_at: 0,
+        })
+    }
+
+    async fn refund(&self, _reservation: &Reservation) -> Result<(), GhostwritinError> {
         Ok(())
     }
 }
@@ -103,38 +155,67 @@ impl Quota for Unlimited {
 ///
 /// Basic on purpose: the count lives in this process, so it resets on a
 /// restart and is per isolate on Workers. Good enough for one self-hosted
-/// server; the hosted service keeps its counts in a database. The day is
-/// whatever `today` returns (days since an epoch), so tests and runtimes
-/// without a system clock can supply it.
+/// server; the hosted service keeps its counts in a database. `now` is
+/// unix seconds, so
+/// tests and runtimes without a system clock can supply it; the day is
+/// derived from it.
 pub struct DailyWordLimit {
     limit: usize,
-    today: Arc<dyn Fn() -> u64 + Send + Sync>,
+    now: Arc<dyn Fn() -> u64 + Send + Sync>,
     used: Mutex<HashMap<AccountId, (u64, usize)>>,
 }
 
 impl DailyWordLimit {
-    pub fn new(limit: usize, today: impl Fn() -> u64 + Send + Sync + 'static) -> Self {
+    pub fn new(limit: usize, now: impl Fn() -> u64 + Send + Sync + 'static) -> Self {
         Self {
             limit,
-            today: Arc::new(today),
+            now: Arc::new(now),
             used: Mutex::new(HashMap::new()),
         }
+    }
+
+    /// The window `now` (unix seconds) falls in.
+    fn day(now: u64) -> (u64, u64) {
+        (now / SECS_PER_DAY, (now / SECS_PER_DAY + 1) * SECS_PER_DAY)
     }
 }
 
 #[async_trait]
 impl Quota for DailyWordLimit {
-    async fn reserve(&self, account: &AccountId, words: usize) -> Result<(), GhostwritinError> {
-        let today = (self.today)();
+    async fn reserve(
+        &self,
+        account: &AccountId,
+        words: usize,
+    ) -> Result<Reservation, GhostwritinError> {
+        let now = (self.now)();
+        let (day, resets_at) = Self::day(now);
         let mut used = self.used.lock().map_err(|_| GhostwritinError::Storage)?;
-        let entry = used.entry(account.clone()).or_insert((today, 0));
-        if entry.0 != today {
-            *entry = (today, 0);
+        let entry = used.entry(account.clone()).or_insert((day, 0));
+        if entry.0 != day {
+            *entry = (day, 0);
         }
         if entry.1.saturating_add(words) > self.limit {
-            return Err(GhostwritinError::QuotaExceeded);
+            return Err(GhostwritinError::QuotaExceeded {
+                resets_at,
+                retry_after: resets_at.saturating_sub(now),
+            });
         }
         entry.1 += words;
+        Ok(Reservation {
+            account: account.clone(),
+            words,
+            period: day,
+            resets_at,
+        })
+    }
+
+    async fn refund(&self, reservation: &Reservation) -> Result<(), GhostwritinError> {
+        let mut used = self.used.lock().map_err(|_| GhostwritinError::Storage)?;
+        if let Some(entry) = used.get_mut(&reservation.account)
+            && entry.0 == reservation.period
+        {
+            entry.1 = entry.1.saturating_sub(reservation.words);
+        }
         Ok(())
     }
 }
@@ -347,20 +428,41 @@ mod tests {
 
     #[pollster::test]
     async fn a_daily_limit_resets_each_day() {
-        let day = Arc::new(std::sync::atomic::AtomicU64::new(1));
+        let day = Arc::new(std::sync::atomic::AtomicU64::new(86_400));
         let clock = day.clone();
         let quota =
             DailyWordLimit::new(100, move || clock.load(std::sync::atomic::Ordering::SeqCst));
         let me = account("me");
-        assert_eq!(quota.reserve(&me, 60).await, Ok(()));
+        let first = quota.reserve(&me, 60).await.unwrap();
+        assert_eq!(first.period, 1);
+        assert_eq!(first.resets_at, 172_800);
         assert_eq!(
             quota.reserve(&me, 41).await,
-            Err(GhostwritinError::QuotaExceeded)
+            Err(GhostwritinError::QuotaExceeded {
+                resets_at: 172_800,
+                retry_after: 86_400,
+            })
         );
-        assert_eq!(quota.reserve(&account("other"), 100).await, Ok(()));
-        assert_eq!(quota.reserve(&me, 40).await, Ok(()));
-        day.store(2, std::sync::atomic::Ordering::SeqCst);
-        assert_eq!(quota.reserve(&me, 100).await, Ok(()));
+        assert!(quota.reserve(&account("other"), 100).await.is_ok());
+        // A failed rewrite is refunded, and the words are back.
+        assert_eq!(quota.refund(&first).await, Ok(()));
+        assert!(quota.reserve(&me, 60).await.is_ok());
+        // The next day the whole allowance is back.
+        day.store(172_800, std::sync::atomic::Ordering::SeqCst);
+        assert!(quota.reserve(&me, 100).await.is_ok());
+        // A refund for yesterday's window does not credit today's.
+        assert_eq!(quota.refund(&first).await, Ok(()));
+        assert!(quota.reserve(&me, 1).await.is_err());
+    }
+
+    #[pollster::test]
+    async fn unlimited_reserves_and_refunds_without_counting() {
+        let quota = Unlimited;
+        let me = account("me");
+        let reservation = quota.reserve(&me, 10_000).await.unwrap();
+        assert_eq!(reservation.words, 10_000);
+        assert_eq!(quota.refund(&reservation).await, Ok(()));
+        quota.settle(&reservation).await;
     }
 
     #[pollster::test]

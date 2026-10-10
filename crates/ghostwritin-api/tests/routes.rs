@@ -8,12 +8,13 @@ use axum::body::{Body, to_bytes};
 use cratefield_core::{Completion, Prompt, TextModel, TextModelError};
 use cratefield_testing::{TestHarness, conformance};
 use ghostwritin_api::{HealthApi, RewriteApi, Services};
-use ghostwritin_core::AccountId;
 use ghostwritin_core::ports::{
-    DailyWordLimit, InMemoryVoiceStore, RequestLog, RequestLogger, StaticApiKeys, VoiceStore,
+    DailyWordLimit, InMemoryVoiceStore, Quota, RequestLog, RequestLogger, Reservation,
+    StaticApiKeys, VoiceStore,
 };
+use ghostwritin_core::{AccountId, GhostwritinError};
 use ghostwritin_core::{Strength, Voice};
-use http::{Method, Request, StatusCode, header};
+use http::{HeaderMap, Method, Request, StatusCode, header};
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
@@ -82,6 +83,18 @@ async fn call(
     key: Option<&str>,
     body: &str,
 ) -> (StatusCode, Value, String) {
+    let (status, json, content_type, _) = call_with_headers(kit, method, path, key, body).await;
+    (status, json, content_type)
+}
+
+/// [`call`], with the response headers (`Retry-After` on a used-up quota).
+async fn call_with_headers(
+    kit: &TestHarness,
+    method: Method,
+    path: &str,
+    key: Option<&str>,
+    body: &str,
+) -> (StatusCode, Value, String, HeaderMap) {
     let mut request = Request::builder()
         .method(method)
         .uri(path)
@@ -96,6 +109,7 @@ async fn call(
         .await
         .unwrap();
     let status = response.status();
+    let response_headers = response.headers().clone();
     let content_type = response
         .headers()
         .get(header::CONTENT_TYPE)
@@ -106,6 +120,7 @@ async fn call(
         status,
         serde_json::from_slice(&bytes).unwrap_or(Value::Null),
         content_type,
+        response_headers,
     )
 }
 
@@ -291,7 +306,7 @@ async fn my_voice_uses_the_stored_summary_only() {
 #[pollster::test]
 async fn a_quota_is_429() {
     let mut limited = services();
-    limited.quota = Arc::new(DailyWordLimit::new(30, || 1));
+    limited.quota = Arc::new(DailyWordLimit::new(30, || 86_400));
     let kit = kit_with(limited, Some(polish));
     let (status, _, _) = call(
         &kit,
@@ -302,7 +317,7 @@ async fn a_quota_is_429() {
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    let (status, json, _) = call(
+    let (status, json, content_type, headers) = call_with_headers(
         &kit,
         Method::POST,
         "/v1/rewrite",
@@ -312,6 +327,9 @@ async fn a_quota_is_429() {
     .await;
     assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
     assert_eq!(json["code"], "quota-exceeded");
+    assert_eq!(json["resets_at"], "1970-01-03T00:00:00Z");
+    assert_eq!(headers.get(header::RETRY_AFTER).unwrap(), "86400");
+    assert_eq!(content_type, "application/problem+json");
 }
 
 #[derive(Default)]
@@ -369,4 +387,72 @@ async fn one_metadata_record_per_request() {
 fn modules_conform() {
     conformance(Box::new(RewriteApi::new(services())));
     conformance(Box::new(HealthApi));
+}
+
+/// A quota that records what the API did with each reservation, over an
+/// in-memory daily limit.
+struct RecordingQuota {
+    inner: DailyWordLimit,
+    calls: Mutex<Vec<&'static str>>,
+}
+
+#[async_trait]
+impl Quota for RecordingQuota {
+    async fn reserve(
+        &self,
+        account: &AccountId,
+        words: usize,
+    ) -> Result<Reservation, GhostwritinError> {
+        self.calls.lock().unwrap().push("reserve");
+        self.inner.reserve(account, words).await
+    }
+
+    async fn refund(&self, reservation: &Reservation) -> Result<(), GhostwritinError> {
+        self.calls.lock().unwrap().push("refund");
+        self.inner.refund(reservation).await
+    }
+
+    async fn settle(&self, _reservation: &Reservation) {
+        self.calls.lock().unwrap().push("settle");
+    }
+}
+
+#[pollster::test]
+async fn a_failed_rewrite_refunds_and_a_good_one_settles() {
+    let quota = Arc::new(RecordingQuota {
+        // Room for one draft a day, not two.
+        inner: DailyWordLimit::new(30, || 86_400),
+        calls: Mutex::new(Vec::new()),
+    });
+    let mut limited = services();
+    limited.quota = quota.clone();
+
+    // The model breaks a locked number: 422, and the words go back.
+    let kit = kit_with(limited.clone(), Some(break_numbers));
+    let (status, json, _) = call(
+        &kit,
+        Method::POST,
+        "/v1/rewrite",
+        Some("test-key"),
+        &body("casual"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{json}");
+    assert_eq!(*quota.calls.lock().unwrap(), ["reserve", "refund"]);
+
+    // So the same draft still fits, and a good rewrite settles its words.
+    let kit = kit_with(limited, Some(polish));
+    let (status, json, _) = call(
+        &kit,
+        Method::POST,
+        "/v1/rewrite",
+        Some("test-key"),
+        &body("casual"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{json}");
+    assert_eq!(
+        *quota.calls.lock().unwrap(),
+        ["reserve", "refund", "reserve", "settle"]
+    );
 }

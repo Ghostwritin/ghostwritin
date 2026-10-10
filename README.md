@@ -40,7 +40,7 @@ The meaning lock and the word diff are generic, so they live in the harness, not
 **Works** (locally, with tests):
 
 - The engine end to end against a scripted model: voices, strengths, chunking, Markdown structure kept, the lock with one retry and then `meaning-changed`, the diff, the locks.
-- The API through the harness router: auth, validation, `my_voice` without a summary (403), quotas (429), no model (503), a broken lock (422 with the locks).
+- The API through the harness router: auth, validation, `my_voice` without a summary (403), quotas (429 with `Retry-After` and `resets_at`, and the words refunded when a rewrite fails), no model (503), a broken lock (422 with the locks).
 - The Worker builds for `wasm32-unknown-unknown` and with `worker-build`, and answered `/v1/health`, `401` and `503 model-not-configured` under `wrangler dev --local` (no model key was used, so no real rewrite went through it). A full-length rewrite also goes through `wrangler dev --local` against a scripted OpenAI-compatible server (300 ms of model latency standing in for a provider): a 9,946-word draft came back HTTP 200 in 6.5 s wall — 19 model calls, one per ~600-word chunk, strictly sequential — for about 0.2 s of workerd CPU. With a real model, wall time scales with those ~19 sequential calls; the CPU does not.
 - The CLI and the MCP server, against the same engine. Not run against a real provider in this repository's tests.
 
@@ -71,7 +71,7 @@ Content-Type: application/json
 
 With a `HumanScore` wired in, a score is `{"ai_likely": 0.0–1.0, "detector": "…", "flags": [{"start", "end", "reason"}]}`. `flags` are byte offsets on char boundaries into the text that was scored (`score_before` indexes the request's text, `score_after` the rewrite), with a reason, `stock_phrase` or `uniform_rhythm`; they may overlap or nest, and they carry no words. A score without `flags` still parses.
 
-Errors are `application/problem+json` with a stable `code`: `invalid-request`, `empty-text`, `too-many-words` (over 10,000), `unauthorized`, `voice-unavailable`, `quota-exceeded`, `meaning-changed` (with `locks`: the facts the model would not keep), `model-not-configured`, `model-unavailable`, `model-rejected`, `model-output`. The Worker adds one of its own, `rate-limited` (429, with `Retry-After`), when the account's rate-limit binding refuses the key.
+Errors are `application/problem+json` with a stable `code`: `invalid-request`, `empty-text`, `too-many-words` (over 10,000), `unauthorized`, `voice-unavailable`, `quota-exceeded` (with `resets_at`, RFC 3339, and a `Retry-After` header), `meaning-changed` (with `locks`: the facts the model would not keep), `model-not-configured`, `model-unavailable`, `model-rejected`, `model-output`. The Worker adds one of its own, `rate-limited` (429, with `Retry-After`), when the account's rate-limit binding refuses the key.
 
 ### The meaning lock
 

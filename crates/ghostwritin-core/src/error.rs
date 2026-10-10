@@ -38,9 +38,19 @@ pub enum GhostwritinError {
     #[error("the language model's answer did not have the expected shape")]
     ModelOutput,
     #[error("the word quota for this account is used up")]
-    QuotaExceeded,
+    QuotaExceeded {
+        /// Unix seconds when the account's period rolls over and the words
+        /// come back.
+        resets_at: u64,
+        /// Seconds from now until `resets_at`: the `Retry-After` value.
+        retry_after: u64,
+    },
     #[error("a valid API key is required")]
     Unauthorized,
+    #[error("billing is not configured")]
+    BillingNotConfigured,
+    #[error("billing is unavailable; try again shortly")]
+    BillingUnavailable,
     #[error("storage failed")]
     Storage,
 }
@@ -60,8 +70,10 @@ impl GhostwritinError {
             Self::ModelUnavailable => "model-unavailable",
             Self::ModelRejected => "model-rejected",
             Self::ModelOutput => "model-output",
-            Self::QuotaExceeded => "quota-exceeded",
+            Self::QuotaExceeded { .. } => "quota-exceeded",
             Self::Unauthorized => "unauthorized",
+            Self::BillingNotConfigured => "billing-not-configured",
+            Self::BillingUnavailable => "billing-unavailable",
             Self::Storage => "storage",
         }
     }
@@ -77,9 +89,13 @@ impl GhostwritinError {
             Self::Unauthorized => 401,
             Self::VoiceUnavailable => 403,
             Self::MeaningChanged { .. } => 422,
-            Self::QuotaExceeded => 429,
+            Self::QuotaExceeded { .. } => 429,
             Self::ModelRejected | Self::ModelOutput => 502,
-            Self::ModelNotConfigured | Self::ModelUnavailable | Self::Storage => 503,
+            Self::ModelNotConfigured
+            | Self::ModelUnavailable
+            | Self::BillingNotConfigured
+            | Self::BillingUnavailable
+            | Self::Storage => 503,
         }
     }
 }

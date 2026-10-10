@@ -12,7 +12,10 @@
 //! repository's: hashed static API keys, no quota, no human score, no
 //! watermark detection, no My voice. The hosted service builds the same
 //! modules with its own `Services` in its own Worker crate; nothing here
-//! needs to change for that.
+//! needs to change for that. Plans and billing are hosted-only: the
+//! hosted service brings its own `Quota` (reserve, refund, settle) and its
+//! own billing module, and reuses [`bearer`] and [`problem`] so its routes
+//! answer like these.
 //!
 //! # Data policy
 //!
@@ -249,16 +252,31 @@ async fn handle(
         ),
         _ => None,
     };
-    services.quota.reserve(&account, words).await?;
+    // The words are charged before the model is called and refunded if it
+    // fails; a rewrite that succeeded settles them (where a plan meters).
+    let reservation = services.quota.reserve(&account, words).await?;
 
-    Engine::new(model)
+    match Engine::new(model)
         .human_score(services.human_score.clone())
         .watermarks(services.watermarks.clone())
         .rewrite(&request, style.as_ref())
         .await
+    {
+        Ok(answer) => {
+            services.quota.settle(&reservation).await;
+            Ok(answer)
+        }
+        Err(error) => {
+            if let Err(refund) = services.quota.refund(&reservation).await {
+                tracing::warn!(target: "ghostwritin::rewrite", code = refund.code(), "quota refund failed");
+            }
+            Err(error)
+        }
+    }
 }
 
-fn bearer(headers: &HeaderMap) -> Option<&str> {
+/// The key from an `Authorization: Bearer <key>` header, if there is one.
+pub fn bearer(headers: &HeaderMap) -> Option<&str> {
     let value = headers.get(header::AUTHORIZATION)?.to_str().ok()?;
     let (scheme, key) = value.split_once(' ')?;
     let key = key.trim();
@@ -267,7 +285,9 @@ fn bearer(headers: &HeaderMap) -> Option<&str> {
 
 /// An RFC 9457 problem. `locks` rides along for `meaning-changed`, because
 /// the caller needs to know which facts broke; it goes to the caller only.
-fn problem(error: &GhostwritinError) -> Response {
+/// A used-up quota says when it comes back: `resets_at` (RFC 3339) in the
+/// body, `Retry-After` in the headers.
+pub fn problem(error: &GhostwritinError) -> Response {
     let status = StatusCode::from_u16(error.status()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
     let mut body = json!({
         "type": format!("{PROBLEM_BASE}{}", error.code()),
@@ -278,11 +298,21 @@ fn problem(error: &GhostwritinError) -> Response {
     if let GhostwritinError::MeaningChanged { locks } = error {
         body["locks"] = serde_json::to_value(locks).unwrap_or_default();
     }
+    if let GhostwritinError::QuotaExceeded { resets_at, .. } = error {
+        body["resets_at"] = json!(rfc3339(*resets_at));
+    }
     let mut response = (status, axum::Json(body)).into_response();
     response.headers_mut().insert(
         header::CONTENT_TYPE,
         HeaderValue::from_static("application/problem+json"),
     );
+    if let GhostwritinError::QuotaExceeded { retry_after, .. } = error {
+        response.headers_mut().insert(
+            header::RETRY_AFTER,
+            HeaderValue::from_str(&retry_after.to_string())
+                .unwrap_or(HeaderValue::from_static("0")),
+        );
+    }
     if matches!(error, GhostwritinError::Unauthorized) {
         response
             .headers_mut()
@@ -290,6 +320,19 @@ fn problem(error: &GhostwritinError) -> Response {
     }
     response.extensions_mut().insert(Outcome(error.code()));
     response
+}
+
+/// Unix seconds as `YYYY-MM-DDTHH:MM:SSZ` (RFC 3339, UTC): the wire form
+/// of a quota's reset time.
+fn rfc3339(unix_secs: u64) -> String {
+    use time::format_description::well_known::Rfc3339;
+    let at =
+        time::OffsetDateTime::from_unix_timestamp(i64::try_from(unix_secs).unwrap_or(i64::MAX))
+            .unwrap_or(time::OffsetDateTime::UNIX_EPOCH);
+    at.replace_nanosecond(0)
+        .unwrap_or(at)
+        .format(&Rfc3339)
+        .unwrap_or_default()
 }
 
 /// [`RequestLog`]s as `tracing` events (target `ghostwritin::rewrite`), for
