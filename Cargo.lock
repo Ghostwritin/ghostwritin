@@ -797,6 +797,7 @@ dependencies = [
  "ghostwritin-api",
  "ghostwritin-core",
  "serde_json",
+ "sha2",
  "worker",
 ]
 

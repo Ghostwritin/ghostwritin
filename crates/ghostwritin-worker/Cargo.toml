@@ -22,6 +22,7 @@ cratefield-runtime-cloudflare = { workspace = true }
 cratefield-adapter-anthropic = { workspace = true }
 cratefield-adapter-openai-compatible = { workspace = true }
 serde_json = { workspace = true }
+sha2 = { workspace = true }
 worker = { workspace = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]

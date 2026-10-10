@@ -13,18 +13,22 @@
 //! The hosted service does not use this crate: it composes the same
 //! modules with its own `Services` in its own (private) Worker.
 //!
-//! Not deployed. It builds for `wasm32-unknown-unknown`; it has not been
-//! run under `wrangler dev` or deployed (see the repository's issues).
+//! Not deployed. It builds for `wasm32-unknown-unknown` and runs under
+//! `wrangler dev --local` (against a scripted model, like the tests); the
+//! deploy itself has not been run (see the repository's issues).
 
 #![forbid(unsafe_code)]
 
+use std::fmt::Write as _;
 use std::sync::{Arc, OnceLock};
+
+use sha2::{Digest, Sha256};
 
 use cratefield_adapter_anthropic::Anthropic;
 use cratefield_adapter_openai_compatible::OpenAiCompatible;
 use cratefield_core::{Harness, HarnessBuilder, TextModel, Venture};
 use cratefield_runtime_cloudflare::{Cloudflare, FetchClient, WorkersClock, serve};
-use ghostwritin_api::{HealthApi, RewriteApi, Services};
+use ghostwritin_api::{HealthApi, PROBLEM_BASE, RewriteApi, Services};
 use ghostwritin_core::ports::{RequestLog, RequestLogger, StaticApiKeys};
 use worker::{Context, Env, Request, Response, event};
 
@@ -120,13 +124,108 @@ fn instance(env: &Env) -> &'static (Harness, Cloudflare) {
     })
 }
 
+/// The route the Worker throttles in front of the harness, and the
+/// `[[ratelimits]]` binding it throttles it with (see `wrangler.toml`).
+const REWRITE_ROUTE: &str = "/v1/rewrite";
+const LIMITER: &str = "REWRITE_LIMITER";
+
+/// Whether this request is one `POST /v1/rewrite`, the only route the
+/// limiter guards (`/v1/health` stays unlimited, and so does everything
+/// else the Worker might one day serve).
+fn is_limited(method: &str, path: &str) -> bool {
+    method.eq_ignore_ascii_case("POST") && path == REWRITE_ROUTE
+}
+
+/// The SHA-256 of `input` as lowercase hex. A bearer token is hashed before
+/// it becomes a limiter key: keys are readable in the Cloudflare dashboard
+/// and in the binding's metrics, and the key must not be the credential.
+fn sha256_hex(input: &str) -> String {
+    let mut hex = String::with_capacity(64);
+    for byte in Sha256::digest(input.as_bytes()) {
+        let _ = write!(hex, "{byte:02x}");
+    }
+    hex
+}
+
+/// The limiter key for a request: the hash of its bearer token, or the
+/// connecting IP when it carries none. `None` when neither is present —
+/// an unattributable request (curl on a laptop) is admitted rather than
+/// throttled as one anonymous mass.
+fn limit_key(authorization: Option<&str>, client_ip: Option<&str>) -> Option<String> {
+    let token = authorization
+        .and_then(|value| value.split_once(' '))
+        .filter(|(scheme, _)| scheme.eq_ignore_ascii_case("bearer"))
+        .map(|(_, key)| key.trim())
+        .filter(|key| !key.is_empty());
+    match token {
+        Some(token) => Some(sha256_hex(token)),
+        None => client_ip
+            .map(str::trim)
+            .filter(|ip| !ip.is_empty())
+            .map(str::to_owned),
+    }
+}
+
+/// The limiter's verdict for a request: `Ok(None)` when it may proceed,
+/// `Ok(Some(429))` when its key is over the limit. The check is skipped —
+/// also `Ok(None)` — when the binding is not configured (a self-hosted
+/// install may remove it) or when the binding errors: a limiter that
+/// cannot answer must not take the API down with it.
+///
+/// # Errors
+///
+/// Propagates `worker::Error` from reading the request's headers and from
+/// building the 429.
+async fn rate_limited(env: &Env, req: &Request) -> worker::Result<Option<Response>> {
+    if !is_limited(req.method().as_ref(), &req.path()) {
+        return Ok(None);
+    }
+    let authorization = req.headers().get("authorization")?;
+    let client_ip = req.headers().get("cf-connecting-ip")?;
+    let Some(key) = limit_key(authorization.as_deref(), client_ip.as_deref()) else {
+        return Ok(None);
+    };
+    let admitted = match env.rate_limiter(LIMITER) {
+        Ok(limiter) => limiter.limit(key).await.map(|outcome| outcome.success),
+        // No such binding: the deployment chose to serve unlimited.
+        Err(_) => return Ok(None),
+    };
+    // An admitted key passes; a limiter that cannot answer must not take
+    // the API down with it, so only a definite refusal throttles.
+    if admitted.unwrap_or(true) {
+        return Ok(None);
+    }
+    too_many_requests().map(Some)
+}
+
+/// The 429 problem, in the API's RFC 9457 shape (a stable `code` on
+/// `ghostwritin_api::PROBLEM_BASE`), with `Retry-After` naming the
+/// binding's period.
+fn too_many_requests() -> worker::Result<Response> {
+    let mut response = Response::from_json(&serde_json::json!({
+        "type": format!("{PROBLEM_BASE}rate-limited"),
+        "title": "too many rewrites from this key; try again shortly",
+        "status": 429,
+        "code": "rate-limited",
+    }))?
+    .with_status(429);
+    response
+        .headers_mut()
+        .set("Content-Type", "application/problem+json")?;
+    response.headers_mut().set("Retry-After", "60")?;
+    Ok(response)
+}
+
 /// Worker fetch entry point.
 ///
 /// # Errors
 ///
-/// Propagates `worker::Error` from the harness router.
+/// Propagates `worker::Error` from the limiter and from the harness router.
 #[event(fetch)]
 pub async fn fetch(req: Request, env: Env, ctx: Context) -> worker::Result<Response> {
+    if let Some(response) = rate_limited(&env, &req).await? {
+        return Ok(response);
+    }
     let (harness, runtime) = instance(&env);
     serve(harness, runtime, req, env, ctx).await
 }
@@ -143,5 +242,32 @@ mod tests {
     fn the_composition_builds() {
         let built = compose(Services::open(Arc::new(NoApiKeys))).build();
         assert!(built.is_ok(), "{:?}", built.err().map(|e| e.to_string()));
+    }
+
+    /// The limiter guards exactly the rewrite route, and its key is the
+    /// hashed token — or the connecting IP, never the token itself.
+    #[test]
+    fn the_limiter_keys_requests_by_token_or_ip() {
+        assert!(is_limited("POST", "/v1/rewrite"));
+        assert!(is_limited("post", "/v1/rewrite"));
+        assert!(!is_limited("GET", "/v1/health"));
+        assert!(!is_limited("POST", "/v1/health"));
+
+        let key = limit_key(Some("Bearer gw_secret"), None).expect("a token makes a key");
+        assert_eq!(key, sha256_hex("gw_secret"));
+        assert!(!key.contains("gw_secret"));
+        assert_eq!(
+            limit_key(Some("bearer gw_secret"), None).as_deref(),
+            Some(key.as_str())
+        );
+        assert_eq!(limit_key(Some("Basic gw_secret"), None), None);
+        assert_eq!(limit_key(Some("Bearer "), None), None);
+
+        assert_eq!(
+            limit_key(None, Some("203.0.113.7")).as_deref(),
+            Some("203.0.113.7")
+        );
+        assert_eq!(limit_key(None, Some(" ")), None);
+        assert_eq!(limit_key(None, None), None);
     }
 }
