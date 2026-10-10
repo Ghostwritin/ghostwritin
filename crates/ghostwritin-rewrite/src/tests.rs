@@ -300,6 +300,7 @@ impl HumanScore for FixedScore {
                 0.08
             },
             detector: "fixed-test".to_owned(),
+            flags: Vec::new(),
         })
     }
 }

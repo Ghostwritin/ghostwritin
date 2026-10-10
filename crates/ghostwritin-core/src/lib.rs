@@ -29,7 +29,7 @@ mod types;
 
 pub use error::GhostwritinError;
 pub use types::{
-    AccountId, DiffOp, DiffSegment, Lock, LockKind, MAX_SAMPLE_WORDS, MAX_SAMPLES,
-    MAX_STYLE_SUMMARY_CHARS, MAX_WORDS, MIN_SAMPLE_WORDS, MIN_SAMPLES, RewriteRequest,
+    AccountId, DiffOp, DiffSegment, Flag, FlagReason, Lock, LockKind, MAX_SAMPLE_WORDS,
+    MAX_SAMPLES, MAX_STYLE_SUMMARY_CHARS, MAX_WORDS, MIN_SAMPLE_WORDS, MIN_SAMPLES, RewriteRequest,
     RewriteResponse, Score, Strength, StyleSummary, Voice, Watermark, diff, locks_of, word_count,
 };

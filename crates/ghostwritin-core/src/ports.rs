@@ -31,7 +31,9 @@ use crate::{AccountId, GhostwritinError, Score, Strength, StyleSummary, Voice, W
 
 /// How likely a detector is to read a text as model-written.
 ///
-/// An implementation sees the text and must not keep it.
+/// An implementation sees the text and must not keep it: it stores and
+/// logs nothing. Its [`Score`] may carry [`crate::Flag`]s — byte offsets
+/// into that text, never the words themselves.
 #[async_trait]
 pub trait HumanScore: Send + Sync {
     /// The score, or `None` when there is no detector (or it failed: a

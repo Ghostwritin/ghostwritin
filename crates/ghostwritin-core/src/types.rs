@@ -296,6 +296,37 @@ pub struct Score {
     pub ai_likely: f32,
     /// Which detector said so.
     pub detector: String,
+    /// The passages a detector would flag. For `score_before` the offsets
+    /// index the request's text, for `score_after` the rewrite. Offsets
+    /// only: a flag carries no words, so neither the score nor a stray
+    /// `Debug` of it can leak the text.
+    #[serde(default)]
+    pub flags: Vec<Flag>,
+}
+
+/// A passage a detector flagged: byte offsets into the text that was
+/// scored. Always on char boundaries, with `start < end`. Flags may
+/// overlap or nest (a uniform-rhythm run can contain stock-phrase
+/// flags; two stock phrases can overlap).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Flag {
+    /// The first byte of the flagged passage.
+    pub start: usize,
+    /// Just past the flagged passage's last byte.
+    pub end: usize,
+    /// What about the passage reads as machine-written.
+    pub reason: FlagReason,
+}
+
+/// Why a detector flagged a [`Flag`]'s passage.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum FlagReason {
+    /// A stock phrase readers associate with model-written prose.
+    StockPhrase,
+    /// A run of sentences of near-identical length.
+    UniformRhythm,
 }
 
 /// A watermark a detector found (hosted only).
@@ -424,7 +455,15 @@ mod tests {
         let response = RewriteResponse {
             rewrite: "x".to_owned(),
             score_before: None,
-            score_after: None,
+            score_after: Some(Score {
+                ai_likely: 0.5,
+                detector: "example-detector".to_owned(),
+                flags: vec![Flag {
+                    start: 2,
+                    end: 13,
+                    reason: FlagReason::StockPhrase,
+                }],
+            }),
             diff: vec![DiffSegment {
                 op: DiffOp::Same,
                 text: "x".to_owned(),
@@ -438,10 +477,17 @@ mod tests {
             serde_json::json!({
                 "rewrite": "x",
                 "score_before": null,
-                "score_after": null,
+                "score_after": {
+                    "ai_likely": 0.5,
+                    "detector": "example-detector",
+                    "flags": [{"start": 2, "end": 13, "reason": "stock_phrase"}]
+                },
                 "diff": [{"op": "same", "text": "x"}],
                 "locks": []
             })
         );
+        // `flags` is new: a score from before it shipped still parses.
+        let old: Score = serde_json::from_str(r#"{"ai_likely":0.5,"detector":"x"}"#).unwrap();
+        assert!(old.flags.is_empty());
     }
 }
