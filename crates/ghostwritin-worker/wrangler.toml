@@ -1,6 +1,7 @@
-# The open-source Ghostwritin Worker. NOT DEPLOYED: nothing serves
-# api.ghostwrit.in yet (see the "Deploy the Worker" issue). Self-hosters can
-# deploy it to their own account with `npx wrangler deploy`.
+# The open-source Ghostwritin Worker. The configuration is ready to deploy;
+# the deploy has not been run yet — nothing here serves api.ghostwrit.in
+# (see the "Deploy the Worker" issue). Deploy with `tools/deploy.sh staging`
+# or `tools/deploy.sh production`; a self-hosted account uses the same two.
 name = "ghostwritin-api"
 main = "build/worker/shim.mjs"
 compatibility_date = "2026-09-01"
@@ -22,9 +23,42 @@ ENV = "staging"
 # OPENAI_MODEL = ""
 # OPENAI_BASE_URL = ""
 
-# Secrets, never in this file (`wrangler secret put <NAME>`):
+# The throttle in front of `POST /v1/rewrite`: 10 rewrites a minute per key
+# (the hash of the caller's bearer token, else their connecting IP). One
+# rewrite fans out into several model calls, so a burst must be made to
+# queue rather than fan out with it; 60 s is the longest period a Workers
+# rate-limit binding offers, so clients get `Retry-After: 60`.
+[[ratelimits]]
+name = "REWRITE_LIMITER"
+namespace_id = "1001"
+simple = { limit = 10, period = 60 }
+
+# Secrets, never in this file (`wrangler secret put <NAME>`, or
+# `tools/deploy.sh` refuses to deploy):
 #   GHOSTWRITIN_API_KEYS   account=sha256hex pairs, comma-separated; without
 #                          it every rewrite is refused (401)
 #   ANTHROPIC_API_KEY      or OPENAI_API_KEY: the model provider; without one
 #                          /v1/rewrite answers 503 model-not-configured
 #   HARNESS_SECRET         harness log pseudonyms (32+ bytes)
+
+# Production, on the custom domain. An [env.*] block inherits nothing:
+# vars and bindings are repeated below, and the limiter gets its own
+# namespace_id so a burst against staging cannot spend production's
+# (namespaces are account-wide). Deployed as `ghostwritin-api-production`
+# (wrangler appends the environment to the name).
+[env.production]
+routes = [{ pattern = "api.ghostwrit.in", custom_domain = true }]
+workers_dev = false
+
+[env.production.vars]
+ENV = "production"
+
+[[env.production.ratelimits]]
+name = "REWRITE_LIMITER"
+namespace_id = "1002"
+simple = { limit = 10, period = 60 }
+
+# The same secrets, per environment (`--env production` for this one):
+#   wrangler secret put GHOSTWRITIN_API_KEYS [--env production]
+#   wrangler secret put ANTHROPIC_API_KEY [--env production]
+#   wrangler secret put HARNESS_SECRET [--env production]

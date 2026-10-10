@@ -4,7 +4,7 @@ The engine behind [Ghostwritin'](https://ghostwrit.in): it rewrites AI-assisted 
 
 Rust, on the [Cratefield](https://github.com/Cratefield/harness) harness. MIT licensed.
 
-> **Status: early, nothing is live.** No Worker is deployed and `api.ghostwrit.in` does not answer. The CLI and the MCP server are not published to crates.io or npm. The **human score is not implemented**: the open build has no detector and returns `null` for both scores. Watermark detection and My voice at scale are hosted features that do not exist yet. Everything below marked *works* runs locally and is covered by tests.
+> **Status: early, nothing is live.** No Worker is deployed and `api.ghostwrit.in` does not answer (the deploy configuration is ready: `tools/deploy.sh`; deploying needs the Workers Paid plan — the Free plan's 10 ms CPU per request does not fit a full-length rewrite). The CLI and the MCP server are not published to crates.io or npm. The **human score is not implemented**: the open build has no detector and returns `null` for both scores. Watermark detection and My voice at scale are hosted features that do not exist yet. Everything below marked *works* runs locally and is covered by tests.
 
 ## Open core
 
@@ -41,7 +41,7 @@ The meaning lock and the word diff are generic, so they live in the harness, not
 
 - The engine end to end against a scripted model: voices, strengths, chunking, Markdown structure kept, the lock with one retry and then `meaning-changed`, the diff, the locks.
 - The API through the harness router: auth, validation, `my_voice` without a summary (403), quotas (429), no model (503), a broken lock (422 with the locks).
-- The Worker builds for `wasm32-unknown-unknown` and with `worker-build`, and answered `/v1/health`, `401` and `503 model-not-configured` under `wrangler dev --local` (no model key was used, so no real rewrite went through it).
+- The Worker builds for `wasm32-unknown-unknown` and with `worker-build`, and answered `/v1/health`, `401` and `503 model-not-configured` under `wrangler dev --local` (no model key was used, so no real rewrite went through it). A full-length rewrite also goes through `wrangler dev --local` against a scripted OpenAI-compatible server (300 ms of model latency standing in for a provider): a 9,946-word draft came back HTTP 200 in 6.5 s wall — 19 model calls, one per ~600-word chunk, strictly sequential — for about 0.2 s of workerd CPU. With a real model, wall time scales with those ~19 sequential calls; the CPU does not.
 - The CLI and the MCP server, against the same engine. Not run against a real provider in this repository's tests.
 
 **Not built or not live**: a deployed Worker and `api.ghostwrit.in`; accounts, passkeys and issued API keys; billing and word quotas; a human-score detector; watermark detection; My voice in the hosted service; published CLI and MCP packages; self-hosting documentation beyond this README. Each has an issue.
@@ -69,7 +69,7 @@ Content-Type: application/json
 }
 ```
 
-Errors are `application/problem+json` with a stable `code`: `invalid-request`, `empty-text`, `too-many-words` (over 10,000), `unauthorized`, `voice-unavailable`, `quota-exceeded`, `meaning-changed` (with `locks`: the facts the model would not keep), `model-not-configured`, `model-unavailable`, `model-rejected`, `model-output`.
+Errors are `application/problem+json` with a stable `code`: `invalid-request`, `empty-text`, `too-many-words` (over 10,000), `unauthorized`, `voice-unavailable`, `quota-exceeded`, `meaning-changed` (with `locks`: the facts the model would not keep), `model-not-configured`, `model-unavailable`, `model-rejected`, `model-output`. The Worker adds one of its own, `rate-limited` (429, with `Retry-After`), when the account's rate-limit binding refuses the key.
 
 ### The meaning lock
 
@@ -97,7 +97,7 @@ One tool, `rewrite` (`text`, optional `voice` and `strength`), returning the rew
 
 ## Self-hosting the Worker
 
-Untested end to end with a real model; the steps are what the code expects.
+`tools/deploy.sh <staging|production>` runs the whole path — it refuses to deploy until the secrets exist, deploys, then smoke-tests `/v1/health` (asserting `ok`, `model_configured` and the workspace version) and rolls back if that fails, when there is an earlier version to roll back to. Staging's URL comes from `STAGING_URL` — the workers.dev subdomain is not chosen yet, so the script asks for it before deploying. `WRANGLER` overrides the pinned wrangler package (default `wrangler@4.149.0`). The deploy runs the config's `[build]` command, so `worker-build` must be on PATH and the `wasm32-unknown-unknown` target installed (`cargo install worker-build`, `rustup target add wasm32-unknown-unknown`). By hand:
 
 ```sh
 cd crates/ghostwritin-worker
@@ -105,8 +105,14 @@ cd crates/ghostwritin-worker
 npx wrangler secret put GHOSTWRITIN_API_KEYS  # me=<sha256>, comma-separated for several
 npx wrangler secret put ANTHROPIC_API_KEY     # or OPENAI_API_KEY (+ OPENAI_BASE_URL as a var)
 npx wrangler secret put HARNESS_SECRET        # 32+ random bytes, for log pseudonyms
-PATH="$HOME/.cargo/bin:$PATH" npx wrangler deploy
+PATH="$HOME/.cargo/bin:$PATH" npx wrangler deploy --env ""   # staging; production: --env production
 ```
+
+The top-level environment is staging (a `*.workers.dev` URL); `[env.production]` serves `api.ghostwrit.in` as `ghostwritin-api-production`. Both carry the same `REWRITE_LIMITER` rate-limit binding — 10 rewrites per minute per key (the caller's hashed bearer token, else their IP) on `POST /v1/rewrite`, answered with the 429 `rate-limited` problem and `Retry-After: 60`. Repeat `wrangler secret put <NAME>` for each environment you deploy (secrets are per environment, like vars and bindings). On a first deploy, the first `wrangler secret put <NAME>` (with `--env production` for production) creates the Worker if it does not exist yet.
+
+The plan matters: the Free plan's 10 ms CPU per request does not fit a full-length rewrite (about 0.2 s of workerd CPU measured for 9,946 words); Workers Paid's 30 s default fits with wide headroom. There is no hard wall-time limit for HTTP requests, and the ~19 per-chunk subrequests sit far under the subrequest cap.
+
+End to end against a real model is still untested; the steps are what the code expects.
 
 ## Data policy, and where the code enforces it
 
