@@ -13,11 +13,11 @@ publish = false
 
 [workspace.dependencies]
 # The Cratefield harness, from crates.io, as the other Factory Zero ventures use it.
-cratefield-core = "0.8.4"
-cratefield-runtime-cloudflare = "0.4.2"
-cratefield-adapter-anthropic = "0.3.1"
-cratefield-adapter-openai-compatible = "0.2.1"
-cratefield-testing = "0.5.1"
+cratefield-core = "0.10.0"
+cratefield-runtime-cloudflare = "0.5.0"
+cratefield-adapter-anthropic = "0.3.3"
+cratefield-adapter-openai-compatible = "0.2.3"
+cratefield-testing = "0.5.3"
 # RFC 3339 reset times (`resets_at` on a 429).
 time = { version = "0.3.45", default-features = false, features = ["std", "formatting"] }
 # The meaning lock and the word diff are generic, so they live in the harness
