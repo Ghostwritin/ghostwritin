@@ -206,6 +206,9 @@ pub enum LockKind {
     Number,
     Quote,
     Code,
+    Url,
+    Hashtag,
+    Custom,
 }
 
 impl From<SpanKind> for LockKind {
@@ -215,6 +218,9 @@ impl From<SpanKind> for LockKind {
             SpanKind::Number => Self::Number,
             SpanKind::Quote => Self::Quote,
             SpanKind::Code => Self::Code,
+            SpanKind::Url => Self::Url,
+            SpanKind::Hashtag => Self::Hashtag,
+            _ => Self::Custom,
         }
     }
 }
