@@ -5,9 +5,11 @@
 name = "ghostwritin-api"
 main = "build/worker/shim.mjs"
 compatibility_date = "2026-09-01"
-# Pick the workers.dev subdomain before the first deploy: a non-interactive
-# deploy registers one on its own otherwise.
-workers_dev = true
+# Staging is served on a custom domain in the Factory0 account, so no
+# workers.dev subdomain is registered for the account (a non-interactive
+# deploy would otherwise register one on its own).
+workers_dev = false
+routes = [{ pattern = "staging-api.ghostwrit.in", custom_domain = true }]
 
 [build]
 command = "worker-build --release"
@@ -30,7 +32,7 @@ ENV = "staging"
 # rate-limit binding offers, so clients get `Retry-After: 60`.
 [[ratelimits]]
 name = "REWRITE_LIMITER"
-namespace_id = "1001"
+namespace_id = "5001"
 simple = { limit = 10, period = 60 }
 
 # Secrets, never in this file (`wrangler secret put <NAME>`, or
@@ -44,8 +46,10 @@ simple = { limit = 10, period = 60 }
 # Production, on the custom domain. An [env.*] block inherits nothing:
 # vars and bindings are repeated below, and the limiter gets its own
 # namespace_id so a burst against staging cannot spend production's
-# (namespaces are account-wide). Deployed as `ghostwritin-api-production`
-# (wrangler appends the environment to the name).
+# (namespaces are account-wide). The ids 5001 and 5002 are unused on the
+# Factory0 account; 1001 and 1002 are taken by other Workers' limiters.
+# Deployed as `ghostwritin-api-production` (wrangler appends the environment
+# to the name).
 [env.production]
 routes = [{ pattern = "api.ghostwrit.in", custom_domain = true }]
 workers_dev = false
@@ -55,7 +59,7 @@ ENV = "production"
 
 [[env.production.ratelimits]]
 name = "REWRITE_LIMITER"
-namespace_id = "1002"
+namespace_id = "5002"
 simple = { limit = 10, period = 60 }
 
 # The same secrets, per environment (`--env production` for this one):

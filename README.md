@@ -99,7 +99,7 @@ One tool, `rewrite` (`text`, optional `voice` and `strength`), returning the rew
 
 ## Self-hosting the Worker
 
-`tools/deploy.sh <staging|production>` runs the whole path — it refuses to deploy until the secrets exist, deploys, then smoke-tests `/v1/health` (asserting `ok`, `model_configured` and the workspace version) and rolls back if that fails, when there is an earlier version to roll back to. Staging's URL comes from `STAGING_URL` — the workers.dev subdomain is not chosen yet, so the script asks for it before deploying. `WRANGLER` overrides the pinned wrangler package (default `wrangler@4.149.0`). The deploy runs the config's `[build]` command, so `worker-build` must be on PATH and the `wasm32-unknown-unknown` target installed (`cargo install worker-build`, `rustup target add wasm32-unknown-unknown`). By hand:
+`tools/deploy.sh <staging|production>` runs the whole path — it refuses to deploy until the secrets exist, deploys, then smoke-tests `/v1/health` (asserting `ok`, `model_configured` and the workspace version) and rolls back if that fails, when there is an earlier version to roll back to. Staging's URL comes from `STAGING_URL` (`https://staging-api.ghostwrit.in`), which the script needs before deploying. `WRANGLER` overrides the pinned wrangler package (default `wrangler@4.149.0`). The deploy runs the config's `[build]` command, so `worker-build` must be on PATH and the `wasm32-unknown-unknown` target installed (`cargo install worker-build`, `rustup target add wasm32-unknown-unknown`). By hand:
 
 ```sh
 cd crates/ghostwritin-worker
@@ -110,7 +110,7 @@ npx wrangler secret put HARNESS_SECRET        # 32+ random bytes, for log pseudo
 PATH="$HOME/.cargo/bin:$PATH" npx wrangler deploy --env ""   # staging; production: --env production
 ```
 
-The top-level environment is staging (a `*.workers.dev` URL); `[env.production]` serves `api.ghostwrit.in` as `ghostwritin-api-production`. Both carry the same `REWRITE_LIMITER` rate-limit binding — 10 rewrites per minute per key (the caller's hashed bearer token, else their IP) on `POST /v1/rewrite`, answered with the 429 `rate-limited` problem and `Retry-After: 60`. Repeat `wrangler secret put <NAME>` for each environment you deploy (secrets are per environment, like vars and bindings). On a first deploy, the first `wrangler secret put <NAME>` (with `--env production` for production) creates the Worker if it does not exist yet.
+The top-level environment is staging (`staging-api.ghostwrit.in`, a custom domain on the ghostwrit.in zone, no workers.dev URL); `[env.production]` serves `api.ghostwrit.in` as `ghostwritin-api-production`. Both carry the same `REWRITE_LIMITER` rate-limit binding — 10 rewrites per minute per key (the caller's hashed bearer token, else their IP) on `POST /v1/rewrite`, answered with the 429 `rate-limited` problem and `Retry-After: 60`. Repeat `wrangler secret put <NAME>` for each environment you deploy (secrets are per environment, like vars and bindings). On a first deploy, the first `wrangler secret put <NAME>` (with `--env production` for production) creates the Worker if it does not exist yet.
 
 The plan matters: the Free plan's 10 ms CPU per request does not fit a full-length rewrite (about 0.2 s of workerd CPU measured for 9,946 words); Workers Paid's 30 s default fits with wide headroom. There is no hard wall-time limit for HTTP requests, and the ~19 per-chunk subrequests sit far under the subrequest cap.
 
