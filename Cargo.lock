@@ -344,9 +344,9 @@ dependencies = [
 
 [[package]]
 name = "cratefield-core"
-version = "0.10.0"
+version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cb13274aadff22d6c20584314ea344ea3b6eeabd862a87ac639a9fa2d78649e1"
+checksum = "550a356621be58150851856a4c9c391347579ed3f078887363de9a7ba27477e9"
 dependencies = [
  "async-trait",
  "axum",
@@ -435,7 +435,8 @@ dependencies = [
 [[package]]
 name = "cratefield-text-diff"
 version = "0.1.0"
-source = "git+https://github.com/Cratefield/harness?rev=c12f3954d7febde9e3786db2651a825f2750eb14#c12f3954d7febde9e3786db2651a825f2750eb14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a905d3e1738bec1fbd7dd559b042e1c346c4b8fd5ff448dd080a776ace5135b8"
 dependencies = [
  "serde",
 ]
@@ -443,7 +444,8 @@ dependencies = [
 [[package]]
 name = "cratefield-text-guard"
 version = "0.1.0"
-source = "git+https://github.com/Cratefield/harness?rev=c12f3954d7febde9e3786db2651a825f2750eb14#c12f3954d7febde9e3786db2651a825f2750eb14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c431e5ce259e58791a29d69af92130aa210cabc52ad8c8314abe824703acd620"
 dependencies = [
  "serde",
 ]
