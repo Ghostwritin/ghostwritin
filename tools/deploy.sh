@@ -29,7 +29,7 @@ cd "$(dirname "$0")/../crates/ghostwritin-worker"
 # the workspace's own version, so stale code fails the gate.
 workspace_version="$(sed -n 's/^version = "\(.*\)"/\1/p' ../../Cargo.toml | head -1)"
 
-wrangler() { npx --yes "$spec" "$@"; }
+wrangler() { bunx "$spec" "$@"; }
 
 # The secrets this environment needs, by name only — never their values.
 # One provider key is enough: the Worker prefers Anthropic and falls back

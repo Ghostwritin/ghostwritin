@@ -6,3 +6,4 @@
 .wrangler/
 node_modules/
 .cargo-home/
+package-lock.json
