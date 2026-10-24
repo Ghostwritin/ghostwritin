@@ -4,7 +4,7 @@
 # SHA-256 digest goes into the Worker's configuration.
 #
 #   tools/api-key.sh <account>
-#   npx wrangler secret put GHOSTWRITIN_API_KEYS   # paste the entry (comma-join several)
+#   bunx wrangler secret put GHOSTWRITIN_API_KEYS   # paste the entry (comma-join several)
 set -euo pipefail
 
 account="${1:?usage: tools/api-key.sh <account>}"

@@ -104,10 +104,10 @@ One tool, `rewrite` (`text`, optional `voice` and `strength`), returning the rew
 ```sh
 cd crates/ghostwritin-worker
 ../../tools/api-key.sh me                     # prints a key once; the line it outputs is the config entry
-npx wrangler secret put GHOSTWRITIN_API_KEYS  # me=<sha256>, comma-separated for several
-npx wrangler secret put ANTHROPIC_API_KEY     # or OPENAI_API_KEY (+ OPENAI_BASE_URL as a var)
-npx wrangler secret put HARNESS_SECRET        # 32+ random bytes, for log pseudonyms
-PATH="$HOME/.cargo/bin:$PATH" npx wrangler deploy --env ""   # staging; production: --env production
+bunx wrangler secret put GHOSTWRITIN_API_KEYS  # me=<sha256>, comma-separated for several
+bunx wrangler secret put ANTHROPIC_API_KEY     # or OPENAI_API_KEY (+ OPENAI_BASE_URL as a var)
+bunx wrangler secret put HARNESS_SECRET        # 32+ random bytes, for log pseudonyms
+PATH="$HOME/.cargo/bin:$PATH" bunx wrangler deploy --env ""   # staging; production: --env production
 ```
 
 The top-level environment is staging (`staging-api.ghostwrit.in`, a custom domain on the ghostwrit.in zone, no workers.dev URL); `[env.production]` serves `api.ghostwrit.in` as `ghostwritin-api-production`. Both carry the same `REWRITE_LIMITER` rate-limit binding — 10 rewrites per minute per key (the caller's hashed bearer token, else their IP) on `POST /v1/rewrite`, answered with the 429 `rate-limited` problem and `Retry-After: 60`. Repeat `wrangler secret put <NAME>` for each environment you deploy (secrets are per environment, like vars and bindings). On a first deploy, the first `wrangler secret put <NAME>` (with `--env production` for production) creates the Worker if it does not exist yet.
